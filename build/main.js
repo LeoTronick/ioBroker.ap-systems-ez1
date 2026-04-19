@@ -22,14 +22,22 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
   mod
 ));
 var utils = __toESM(require("@iobroker/adapter-core"));
+var import_net = __toESM(require("net"));
 var import_ApSystemsEz1Client = require("./lib/ApSystemsEz1Client");
-class ApSystemsEz1 extends utils.Adapter {
+const _ApSystemsEz1 = class _ApSystemsEz1 extends utils.Adapter {
   constructor(options = {}) {
     super({
       ...options,
       name: "ap-systems-ez1"
     });
     this.pollIntervalInMilliSeconds = 60;
+    // 1 hour
+    // Serializes write commands — prevents concurrent device commands from racing
+    this.writeQueue = Promise.resolve();
+    /**
+     * Cache to track which states have been created to avoid repeated getStateAsync calls.
+     */
+    this.createdStates = /* @__PURE__ */ new Set();
     this.on("ready", this.onReady.bind(this));
     this.on("stateChange", this.onStateChange.bind(this));
     this.on("unload", this.onUnload.bind(this));
@@ -39,200 +47,337 @@ class ApSystemsEz1 extends utils.Adapter {
    */
   async onReady() {
     var _a, _b, _c, _d;
-    this.log.info("config ipAddress: " + this.config.ipAddress);
-    this.log.info("config port: " + this.config.port);
-    this.log.info("config pollIntervalInSeconds: " + this.config.pollIntervalInSeconds);
-    this.log.info("config ignoreConnectionErrorMessages: " + this.config.ignoreConnectionErrorMessages);
-    if (!((_a = this.config) == null ? void 0 : _a.ipAddress) || !((_b = this.config) == null ? void 0 : _b.port) || !((_c = this.config) == null ? void 0 : _c.pollIntervalInSeconds)) {
-      this.log.error("Can not start with in valid config. Please open config.");
+    this.log.debug("config ipAddress: " + this.config.ipAddress);
+    this.log.debug("config port: " + this.config.port);
+    this.log.debug("config pollIntervalInSeconds: " + this.config.pollIntervalInSeconds);
+    this.log.debug("config ignoreConnectionErrorMessages: " + this.config.ignoreConnectionErrorMessages);
+    const port = Number((_a = this.config) == null ? void 0 : _a.port);
+    const pollInterval = Number((_b = this.config) == null ? void 0 : _b.pollIntervalInSeconds);
+    if (!((_c = this.config) == null ? void 0 : _c.ipAddress) || !import_net.default.isIPv4(this.config.ipAddress)) {
+      this.log.error("Invalid IP address in config. Must be a valid IPv4 address.");
       return;
     }
-    this.pollIntervalInMilliSeconds = this.config.pollIntervalInSeconds * 1e3;
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      this.log.error("Invalid port in config. Must be an integer between 1 and 65535.");
+      return;
+    }
+    if (!Number.isFinite(pollInterval) || pollInterval < 1) {
+      this.log.error("Invalid pollIntervalInSeconds in config. Must be a positive number.");
+      return;
+    }
+    this.pollIntervalInMilliSeconds = pollInterval * 1e3;
     this.apiClient = new import_ApSystemsEz1Client.ApSystemsEz1Client(this.log, this.config.ipAddress, this.config.port, (_d = this.config) == null ? void 0 : _d.ignoreConnectionErrorMessages);
-    setInterval(() => {
-      this.setDeviceInfoStates();
-      this.setOutputDataStates();
-      this.setAlarmInfoStates();
-      this.setOnOffStatusState();
-      this.setMaxPowerState();
-    }, this.pollIntervalInMilliSeconds);
-  }
-  setDeviceInfoStates() {
-    this.apiClient.getDeviceInfo().then(async (deviceInfo) => {
-      this.log.info(`deviceInfo: ${JSON.stringify(deviceInfo)}`);
-      if (deviceInfo !== void 0) {
-        const res = deviceInfo.data;
-        const strings = [
-          { name: "DeviceId", value: res.deviceId },
-          { name: "DevVer", value: res.devVer },
-          { name: "Ssid", value: res.ssid },
-          { name: "IpAddr", value: res.ipAddr }
-        ];
-        strings.forEach(async (element) => {
-          if (!await this.getStateAsync(element.name)) {
-            this.createState(
-              "DeviceInfo",
-              "",
-              element.name,
-              {
-                type: "string",
-                role: "text",
-                read: true,
-                write: false
-              },
-              () => this.log.info(`state ${element.name} created`)
-            );
-          }
-          await this.setStateAsync(`DeviceInfo.${element.name}`, { val: element.value, ack: true });
-        });
-        const numbers = [
-          { name: "MaxPower", value: res.maxPower },
-          { name: "MinPower", value: res.minPower }
-        ];
-        numbers.forEach(async (element) => {
-          if (!await this.getStateAsync(element.name)) {
-            this.createState(
-              "DeviceInfo",
-              "",
-              element.name,
-              {
-                type: "number",
-                role: "value",
-                read: true,
-                write: false
-              },
-              () => this.log.info(`state ${element.name} created`)
-            );
-          }
-          await this.setStateAsync(`DeviceInfo.${element.name}`, { val: element.value, ack: true });
-        });
-      }
+    await this.extendObjectAsync("connected", {
+      type: "state",
+      common: {
+        name: "Connected",
+        type: "boolean",
+        role: "indicator.connected",
+        read: true,
+        write: false
+      },
+      native: {}
     });
+    this.markStateCreated("connected");
+    await this.setStateAsync("connected", { val: false, ack: true });
+    await Promise.all([
+      this.setDeviceInfoStates(),
+      this.setMaxPowerState(),
+      this.setOutputDataStates(),
+      this.setAlarmInfoStates(),
+      this.setOnOffStatusState()
+    ]);
+    this.slowTimer = setInterval(() => {
+      void this.setDeviceInfoStates();
+      void this.setMaxPowerState();
+    }, _ApSystemsEz1.SLOW_POLL_INTERVAL_MS);
+    this.timer = setInterval(() => {
+      void this.setOutputDataStates();
+      void this.setAlarmInfoStates();
+      void this.setOnOffStatusState();
+    }, this.pollIntervalInMilliSeconds);
+    this.subscribeStates("OnOffStatus.OnOffStatus");
+    this.subscribeStates("MaxPower.MaxPower");
   }
-  setOutputDataStates() {
-    this.apiClient.getOutputData().then(async (outputData) => {
-      this.log.info(`outputData: ${JSON.stringify(outputData)}`);
+  async setDeviceInfoStates() {
+    try {
+      const deviceInfo = await this.apiClient.getDeviceInfo();
+      this.log.debug("deviceInfo received");
+      if (deviceInfo !== void 0) {
+        await this.setConnected(true);
+        const res = deviceInfo.data;
+        const stringPromises = _ApSystemsEz1.DEVICE_INFO_STRINGS.map(async (element) => {
+          const stateId = `DeviceInfo.${element.name}`;
+          if (!this.stateExists(stateId)) {
+            this.markStateCreated(stateId);
+            this.createState(
+              "DeviceInfo",
+              "",
+              element.name,
+              { type: "string", role: "text", read: true, write: false },
+              () => {
+                this.log.info(`state ${element.name} created`);
+              }
+            );
+          }
+          await this.setStateAsync(stateId, { val: element.value(res), ack: true });
+        });
+        const numberPromises = _ApSystemsEz1.DEVICE_INFO_NUMBERS.map(async (element) => {
+          const stateId = `DeviceInfo.${element.name}`;
+          if (!this.stateExists(stateId)) {
+            this.markStateCreated(stateId);
+            this.createState(
+              "DeviceInfo",
+              "",
+              element.name,
+              { type: "number", role: "value", read: true, write: false },
+              () => {
+                this.log.info(`state ${element.name} created`);
+              }
+            );
+          }
+          await this.setStateAsync(stateId, { val: element.value(res), ack: true });
+        });
+        await Promise.all([...stringPromises, ...numberPromises]);
+      } else {
+        await this.setConnected(false);
+      }
+    } catch (e) {
+      this.log.error(`setDeviceInfoStates failed: ${e}`);
+      await this.setConnected(false);
+    }
+  }
+  async setOutputDataStates() {
+    try {
+      const outputData = await this.apiClient.getOutputData();
+      this.log.debug("outputData received");
       if (outputData !== void 0) {
         const res = outputData.data;
-        const numbers = [
-          { name: "CurrentPower_1", value: res.p1 },
-          { name: "CurrentPower_2", value: res.p2 },
-          { name: "CurrentPower_Total", value: res.p1 + res.p2 },
-          { name: "EnergyToday_1", value: res.e1 },
-          { name: "EnergyToday_2", value: res.e2 },
-          { name: "EnergyToday_Total", value: res.e1 + res.e2 },
-          { name: "EnergyLifetime_1", value: res.te1 },
-          { name: "EnergyLifetime_2", value: res.te2 },
-          { name: "EnergyLifetime_Total", value: res.te1 + res.te2 }
-        ];
-        numbers.forEach(async (element) => {
-          if (!await this.getStateAsync(element.name)) {
+        const promises = _ApSystemsEz1.OUTPUT_DATA_NUMBERS.map(async (element) => {
+          const stateId = `OutputData.${element.name}`;
+          if (!this.stateExists(stateId)) {
+            this.markStateCreated(stateId);
             this.createState(
               "OutputData",
               "",
               element.name,
-              {
-                type: "number",
-                role: "value",
-                read: true,
-                write: false
-              },
-              () => this.log.info(`state ${element.name} created`)
+              { type: "number", role: element.role, unit: element.unit, read: true, write: false },
+              () => {
+                this.log.info(`state ${element.name} created`);
+              }
             );
           }
-          await this.setStateAsync(`OutputData.${element.name}`, { val: element.value, ack: true });
+          await this.setStateAsync(stateId, { val: element.value(res), ack: true });
         });
+        await Promise.all(promises);
+      } else {
+        await this.setConnected(false);
       }
-    });
+    } catch (e) {
+      this.log.error(`setOutputDataStates failed: ${e}`);
+      await this.setConnected(false);
+    }
   }
-  setAlarmInfoStates() {
-    this.apiClient.getAlarmInfo().then(async (alarmInfo) => {
-      this.log.info(`alarmInfo: ${JSON.stringify(alarmInfo)}`);
+  async setAlarmInfoStates() {
+    try {
+      const alarmInfo = await this.apiClient.getAlarmInfo();
+      this.log.debug("alarmInfo received");
       if (alarmInfo !== void 0) {
         const res = alarmInfo.data;
-        const numbers = [
-          { name: "OffGrid", value: res.og },
-          { name: "ShortCircuitError_1", value: res.isce1 },
-          { name: "ShortCircuitError_2", value: res.isce2 },
-          { name: "OutputFault", value: res.oe }
-        ];
-        numbers.forEach(async (element) => {
-          if (!await this.getStateAsync(element.name)) {
+        const promises = _ApSystemsEz1.ALARM_INFO_NUMBERS.map(async (element) => {
+          const stateId = `AlarmInfo.${element.name}`;
+          if (!this.stateExists(stateId)) {
+            this.markStateCreated(stateId);
             this.createState(
               "AlarmInfo",
               "",
               element.name,
-              {
-                type: "string",
-                role: "text",
-                read: true,
-                write: false
-              },
-              () => this.log.info(`state ${element.name} created`)
+              { type: "string", role: "text", read: true, write: false },
+              () => {
+                this.log.info(`state ${element.name} created`);
+              }
             );
           }
-          const value = element.value === "0" ? "Normal" : "Alarm";
-          await this.setStateAsync(`AlarmInfo.${element.name}`, { val: value, ack: true });
+          const rawValue = element.value(res);
+          if (rawValue !== "0" && rawValue !== "1") {
+            this.log.error(`Unexpected alarm value for ${element.name}: ${rawValue}`);
+            return;
+          }
+          const value = rawValue === "0" ? "Normal" : "Alarm";
+          await this.setStateAsync(stateId, { val: value, ack: true });
         });
+        await Promise.all(promises);
+      } else {
+        await this.setConnected(false);
       }
-    });
+    } catch (e) {
+      this.log.error(`setAlarmInfoStates failed: ${e}`);
+      await this.setConnected(false);
+    }
   }
-  setOnOffStatusState() {
-    this.apiClient.getOnOffStatus().then(async (onOffStatus) => {
-      this.log.info(`onOffStatus: ${JSON.stringify(onOffStatus)}`);
+  async setOnOffStatusState() {
+    try {
+      const onOffStatus = await this.apiClient.getOnOffStatus();
+      this.log.debug("onOffStatus received");
       if (onOffStatus !== void 0) {
         const res = onOffStatus.data;
-        if (!await this.getStateAsync("OnOffStatus")) {
+        const stateId = "OnOffStatus.OnOffStatus";
+        if (!this.stateExists(stateId)) {
+          this.markStateCreated(stateId);
           this.createState(
             "OnOffStatus",
             "",
             "OnOffStatus",
-            {
-              type: "string",
-              role: "text",
-              read: true,
-              write: false
-            },
-            () => this.log.info(`state OnOffStatus created`)
+            { type: "boolean", role: "switch", read: true, write: true },
+            () => {
+              this.log.info(`state OnOffStatus created`);
+            }
           );
-          const value = res.status === "0" ? "on" : "off";
-          await this.setStateAsync(`OnOffStatus.OnOffStatus`, { val: value, ack: true });
         }
+        if (res.status !== "0" && res.status !== "1") {
+          this.log.error(`Unexpected OnOffStatus from device: ${res.status}`);
+          return;
+        }
+        const value = res.status === "0";
+        await this.setStateAsync(stateId, { val: value, ack: true });
+      } else {
+        await this.setConnected(false);
       }
-    });
+    } catch (e) {
+      this.log.error(`setOnOffStatusState failed: ${e}`);
+      await this.setConnected(false);
+    }
   }
-  setMaxPowerState() {
-    this.apiClient.getMaxPower().then(async (maxPower) => {
-      this.log.info(`maxPower: ${JSON.stringify(maxPower)}`);
+  async setMaxPowerState() {
+    try {
+      const maxPower = await this.apiClient.getMaxPower();
+      this.log.debug("maxPower received");
       if (maxPower !== void 0) {
         const res = maxPower.data;
-        if (!await this.getStateAsync("MaxPower")) {
+        const powerValue = Number(res.maxPower);
+        if (!Number.isFinite(powerValue)) {
+          this.log.error(`Invalid maxPower from device: ${res.maxPower}`);
+          return;
+        }
+        const stateId = "MaxPower.MaxPower";
+        if (!this.stateExists(stateId)) {
+          this.markStateCreated(stateId);
           this.createState(
             "MaxPower",
             "",
             "MaxPower",
-            {
-              type: "string",
-              role: "text",
-              read: true,
-              write: false
-            },
-            () => this.log.info(`state MaxPower created`)
+            { type: "number", role: "value.power", unit: "W", read: true, write: true },
+            () => {
+              this.log.info(`state MaxPower created`);
+            }
           );
-          await this.setStateAsync(`MaxPower.MaxPower`, { val: res.maxPower, ack: true });
         }
+        await this.setStateAsync(stateId, { val: powerValue, ack: true });
+      } else {
+        await this.setConnected(false);
       }
-    });
+    } catch (e) {
+      this.log.error(`setMaxPowerState failed: ${e}`);
+      await this.setConnected(false);
+    }
+  }
+  async setConnected(connected) {
+    await this.setStateAsync("connected", { val: connected, ack: true });
+  }
+  stateExists(stateId) {
+    return this.createdStates.has(stateId);
+  }
+  markStateCreated(stateId) {
+    this.createdStates.add(stateId);
   }
   /**
    * Is called when adapter shuts down - callback has to be called under any circumstances!
    */
   onUnload(callback) {
     try {
+      clearInterval(this.timer);
+      clearInterval(this.slowTimer);
       callback();
     } catch (e) {
       callback();
     }
+  }
+  onStateChange(id, state) {
+    if (!state || state.ack) {
+      return;
+    }
+    if (id.endsWith(".OnOffStatus.OnOffStatus")) {
+      if (typeof state.val !== "boolean") {
+        this.log.error(`OnOffStatus: expected boolean, got ${typeof state.val}`);
+        return;
+      }
+      const target = state.val;
+      this.writeQueue = this.writeQueue.then(() => this.applyOnOffStatus(target)).catch(() => {
+      });
+    } else if (id.endsWith(".MaxPower.MaxPower")) {
+      if (typeof state.val !== "number") {
+        this.log.error(`MaxPower: expected number, got ${typeof state.val}`);
+        return;
+      }
+      const watts = state.val;
+      this.writeQueue = this.writeQueue.then(() => this.validateAndSetMaxPower(watts)).catch(() => {
+      });
+    }
+  }
+  async applyOnOffStatus(on) {
+    await this.apiClient.setOnOffStatus(on);
+    await new Promise((r) => setTimeout(r, 500));
+    const confirmed = await this.apiClient.getOnOffStatus();
+    if (!confirmed) {
+      this.log.error(`OnOff command sent but could not verify device state`);
+      return;
+    }
+    const expected = on ? "0" : "1";
+    if (confirmed.data.status !== expected) {
+      this.log.error(`OnOff verification failed: sent ${on}, device reports status=${confirmed.data.status}`);
+      const actual = confirmed.data.status === "0";
+      await this.setStateAsync("OnOffStatus.OnOffStatus", { val: actual, ack: true });
+      return;
+    }
+    this.log.info(`OnOff set to ${on}`);
+  }
+  async validateAndSetMaxPower(watts) {
+    if (!Number.isFinite(watts)) {
+      this.log.error(`MaxPower rejected: value ${watts} is not a finite number`);
+      return;
+    }
+    const minState = await this.getStateAsync("DeviceInfo.MinPower");
+    const maxState = await this.getStateAsync("DeviceInfo.MaxPower");
+    const min = typeof (minState == null ? void 0 : minState.val) === "number" && Number.isFinite(minState.val) ? minState.val : null;
+    const max = typeof (maxState == null ? void 0 : maxState.val) === "number" && Number.isFinite(maxState.val) ? maxState.val : null;
+    if (min === null || max === null) {
+      this.log.error(`MaxPower ${watts}W rejected: device power limits not yet loaded`);
+      return;
+    }
+    if (watts < min) {
+      this.log.error(`MaxPower ${watts}W rejected: below device minimum ${min}W`);
+      return;
+    }
+    if (watts > max) {
+      this.log.error(`MaxPower ${watts}W rejected: above device maximum ${max}W`);
+      return;
+    }
+    await this.apiClient.setMaxPower(watts);
+    await new Promise((r) => setTimeout(r, 500));
+    const confirmed = await this.apiClient.getMaxPower();
+    if (!confirmed) {
+      this.log.error(`MaxPower command sent but could not verify device state`);
+      return;
+    }
+    const actual = Number(confirmed.data.maxPower);
+    if (!Number.isFinite(actual) || actual !== watts) {
+      this.log.error(`MaxPower verification failed: sent ${watts}W, device reports ${confirmed.data.maxPower}W`);
+      if (Number.isFinite(actual)) {
+        await this.setStateAsync("MaxPower.MaxPower", { val: actual, ack: true });
+      }
+      return;
+    }
+    this.log.info(`MaxPower set to ${watts}W`);
   }
   // If you need to react to object changes, uncomment the following block and the corresponding line in the constructor.
   // You also need to subscribe to the objects with `this.subscribeObjects`, similar to `this.subscribeStates`.
@@ -248,16 +393,6 @@ class ApSystemsEz1 extends utils.Adapter {
   // 		this.log.info(`object ${id} deleted`);
   // 	}
   // }
-  /**
-   * Is called if a subscribed state changes
-   */
-  onStateChange(id, state) {
-    if (state) {
-      this.log.info(`state ${id} changed: ${state.val} (ack = ${state.ack})`);
-    } else {
-      this.log.info(`state ${id} deleted`);
-    }
-  }
   // If you need to accept messages in your adapter, uncomment the following block and the corresponding line in the constructor.
   // /**
   //  * Some message was sent to this instance over message box. Used by email, pushover, text2speech, ...
@@ -273,14 +408,37 @@ class ApSystemsEz1 extends utils.Adapter {
   // 		}
   // 	}
   // }
-  async handleClientError(error) {
-    if (error instanceof Error) {
-      this.log.error(`Unknown error: ${error}. Stack: ${error.stack}`);
-    } else {
-      this.log.error(`Unknown error: ${error}`);
-    }
-  }
-}
+};
+_ApSystemsEz1.SLOW_POLL_INTERVAL_MS = 60 * 60 * 1e3;
+// State mappings cached to avoid object allocation on every poll cycle
+_ApSystemsEz1.DEVICE_INFO_STRINGS = [
+  { name: "DeviceId", value: (res) => res.deviceId },
+  { name: "DevVer", value: (res) => res.devVer },
+  { name: "Ssid", value: (res) => res.ssid },
+  { name: "IpAddr", value: (res) => res.ipAddr }
+];
+_ApSystemsEz1.DEVICE_INFO_NUMBERS = [
+  { name: "MaxPower", value: (res) => res.maxPower },
+  { name: "MinPower", value: (res) => res.minPower }
+];
+_ApSystemsEz1.OUTPUT_DATA_NUMBERS = [
+  { name: "CurrentPower_1", role: "value.power", unit: "W", value: (res) => res.p1 },
+  { name: "CurrentPower_2", role: "value.power", unit: "W", value: (res) => res.p2 },
+  { name: "CurrentPower_Total", role: "value.power", unit: "W", value: (res) => res.p1 + res.p2 },
+  { name: "EnergyToday_1", role: "value.energy", unit: "kWh", value: (res) => res.e1 },
+  { name: "EnergyToday_2", role: "value.energy", unit: "kWh", value: (res) => res.e2 },
+  { name: "EnergyToday_Total", role: "value.energy", unit: "kWh", value: (res) => res.e1 + res.e2 },
+  { name: "EnergyLifetime_1", role: "value.energy", unit: "kWh", value: (res) => res.te1 },
+  { name: "EnergyLifetime_2", role: "value.energy", unit: "kWh", value: (res) => res.te2 },
+  { name: "EnergyLifetime_Total", role: "value.energy", unit: "kWh", value: (res) => res.te1 + res.te2 }
+];
+_ApSystemsEz1.ALARM_INFO_NUMBERS = [
+  { name: "OffGrid", value: (res) => res.og },
+  { name: "ShortCircuitError_1", value: (res) => res.isce1 },
+  { name: "ShortCircuitError_2", value: (res) => res.isce2 },
+  { name: "OutputFault", value: (res) => res.oe }
+];
+let ApSystemsEz1 = _ApSystemsEz1;
 if (require.main !== module) {
   module.exports = (options) => new ApSystemsEz1(options);
 } else {

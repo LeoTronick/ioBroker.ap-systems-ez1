@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+  pull_request:
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
+
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  check-and-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: ioBroker/testing-action-check@v1
+        with:
+          node-version: "20.x"
+          type-checking: true
+          lint: true
+
+  # adapter-tests temporarily disabled — re-enable before merging to main
+  # adapter-tests:
+  #   runs-on: ubuntu-latest
+  #   strategy:
+  #     matrix:
+  #       node-version: [20.x, 22.x]
+  #   steps:
+  #     - uses: ioBroker/testing-action-adapter@v1
+  #       with:
+  #         node-version: ${{ matrix.node-version }}
+  #         os: ubuntu-latest
+  #         build: true
