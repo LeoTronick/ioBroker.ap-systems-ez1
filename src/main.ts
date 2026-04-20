@@ -26,8 +26,8 @@ class ApSystemsEz1 extends utils.Adapter {
 	];
 
 	private static readonly DEVICE_INFO_NUMBERS = [
-		{ name: "MaxPower", value: (res: any) => res.maxPower },
-		{ name: "MinPower", value: (res: any) => res.minPower },
+		{ name: "MaxPower", role: "value.power", unit: "W", value: (res: any) => res.maxPower },
+		{ name: "MinPower", role: "value.power", unit: "W", value: (res: any) => res.minPower },
 	];
 
 	private static readonly OUTPUT_DATA_NUMBERS = [
@@ -146,9 +146,11 @@ class ApSystemsEz1 extends utils.Adapter {
 					const stateId = `DeviceInfo.${element.name}`;
 					if (!this.stateExists(stateId)) {
 						this.markStateCreated(stateId);
-						this.createState("DeviceInfo", "", element.name,
-							{ type: "string", role: "text", read: true, write: false },
-							() => { this.log.info(`state ${element.name} created`); });
+						await this.extendObjectAsync(stateId, {
+							type: "state",
+							common: { name: element.name, type: "string", role: "text", read: true, write: false },
+							native: {},
+						});
 					}
 					await this.setStateAsync(stateId, { val: element.value(res), ack: true });
 				});
@@ -162,9 +164,11 @@ class ApSystemsEz1 extends utils.Adapter {
 					const stateId = `DeviceInfo.${element.name}`;
 					if (!this.stateExists(stateId)) {
 						this.markStateCreated(stateId);
-						this.createState("DeviceInfo", "", element.name,
-							{ type: "number", role: "value", read: true, write: false },
-							() => { this.log.info(`state ${element.name} created`); });
+						await this.extendObjectAsync(stateId, {
+							type: "state",
+							common: { name: element.name, type: "number", role: element.role, unit: element.unit, read: true, write: false },
+							native: {},
+						});
 					}
 					await this.setStateAsync(stateId, { val: value, ack: true });
 				});
@@ -196,9 +200,11 @@ class ApSystemsEz1 extends utils.Adapter {
 					const stateId = `OutputData.${element.name}`;
 					if (!this.stateExists(stateId)) {
 						this.markStateCreated(stateId);
-						this.createState("OutputData", "", element.name,
-							{ type: "number", role: element.role, unit: element.unit, read: true, write: false },
-							() => { this.log.info(`state ${element.name} created`); });
+						await this.extendObjectAsync(stateId, {
+							type: "state",
+							common: { name: element.name, type: "number", role: element.role, unit: element.unit, read: true, write: false },
+							native: {},
+						});
 					}
 					await this.setStateAsync(stateId, { val: value, ack: true });
 				});
@@ -225,9 +231,11 @@ class ApSystemsEz1 extends utils.Adapter {
 					const stateId = `AlarmInfo.${element.name}`;
 					if (!this.stateExists(stateId)) {
 						this.markStateCreated(stateId);
-						this.createState("AlarmInfo", "", element.name,
-							{ type: "string", role: "text", read: true, write: false },
-							() => { this.log.info(`state ${element.name} created`); });
+						await this.extendObjectAsync(stateId, {
+							type: "state",
+							common: { name: element.name, type: "string", role: "text", read: true, write: false },
+							native: {},
+						});
 					}
 					const rawValue = element.value(res);
 					if (rawValue !== "0" && rawValue !== "1") {
@@ -258,9 +266,11 @@ class ApSystemsEz1 extends utils.Adapter {
 				const stateId = "OnOffStatus.OnOffStatus";
 				if (!this.stateExists(stateId)) {
 					this.markStateCreated(stateId);
-					this.createState("OnOffStatus", "", "OnOffStatus",
-						{ type: "boolean", role: "switch", read: true, write: true },
-						() => { this.log.info(`state OnOffStatus created`); });
+					await this.extendObjectAsync(stateId, {
+						type: "state",
+						common: { name: "OnOffStatus", type: "boolean", role: "switch", read: true, write: true },
+						native: {},
+					});
 				}
 				if (res.status !== "0" && res.status !== "1") {
 					this.log.error(`Unexpected OnOffStatus from device: ${res.status}`);
@@ -292,9 +302,11 @@ class ApSystemsEz1 extends utils.Adapter {
 				const stateId = "MaxPower.MaxPower";
 				if (!this.stateExists(stateId)) {
 					this.markStateCreated(stateId);
-					this.createState("MaxPower", "", "MaxPower",
-						{ type: "number", role: "value.power", unit: "W", read: true, write: true },
-						() => { this.log.info(`state MaxPower created`); });
+					await this.extendObjectAsync(stateId, {
+						type: "state",
+						common: { name: "MaxPower", type: "number", role: "value.power", unit: "W", read: true, write: true },
+						native: {},
+					});
 				}
 				await this.setStateAsync(stateId, { val: powerValue, ack: true });
 			} else {
@@ -350,11 +362,11 @@ class ApSystemsEz1 extends utils.Adapter {
 				.then(() => this.applyOnOffStatus(target))
 				.catch(() => { /* errors logged inside */ });
 		} else if (id.endsWith(".MaxPower.MaxPower")) {
-			if (typeof state.val !== "number") {
-				this.log.error(`MaxPower: expected number, got ${typeof state.val}`);
+			const watts = typeof state.val === "string" ? Number(state.val) : state.val;
+			if (typeof watts !== "number" || !Number.isFinite(watts)) {
+				this.log.error(`MaxPower: expected number, got ${typeof state.val} (${state.val})`);
 				return;
 			}
-			const watts = state.val;
 			this.writeQueue = this.writeQueue
 				.then(() => this.validateAndSetMaxPower(watts))
 				.catch(() => { /* errors logged inside */ });
@@ -389,13 +401,22 @@ class ApSystemsEz1 extends utils.Adapter {
 			return;
 		}
 
-		const minState = await this.getStateAsync("DeviceInfo.MinPower");
-		const maxState = await this.getStateAsync("DeviceInfo.MaxPower");
-		const min = typeof minState?.val === "number" && Number.isFinite(minState.val) ? minState.val : null;
-		const max = typeof maxState?.val === "number" && Number.isFinite(maxState.val) ? maxState.val : null;
+		let minState = await this.getStateAsync("DeviceInfo.MinPower");
+		let maxState = await this.getStateAsync("DeviceInfo.MaxPower");
+		let min = typeof minState?.val === "number" && Number.isFinite(minState.val) ? minState.val : null;
+		let max = typeof maxState?.val === "number" && Number.isFinite(maxState.val) ? maxState.val : null;
 
 		if (min === null || max === null) {
-			this.log.error(`MaxPower ${watts}W rejected: device power limits not yet loaded`);
+			this.log.warn(`MaxPower ${watts}W: power limits not cached, fetching from device`);
+			await this.setDeviceInfoStates();
+			minState = await this.getStateAsync("DeviceInfo.MinPower");
+			maxState = await this.getStateAsync("DeviceInfo.MaxPower");
+			min = typeof minState?.val === "number" && Number.isFinite(minState.val) ? minState.val : null;
+			max = typeof maxState?.val === "number" && Number.isFinite(maxState.val) ? maxState.val : null;
+		}
+
+		if (min === null || max === null) {
+			this.log.error(`MaxPower ${watts}W rejected: device power limits unavailable`);
 			return;
 		}
 		if (watts < min) {
