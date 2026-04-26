@@ -7,10 +7,18 @@ on:
     paths-ignore:
       - "**.md"
       - "docs/**"
+      - ".github/**"
+      - "release-please-config.json"
+      - ".release-please-manifest.json"
+      - "admin/i18n/**"
   pull_request:
     paths-ignore:
       - "**.md"
       - "docs/**"
+      - ".github/**"
+      - "release-please-config.json"
+      - ".release-please-manifest.json"
+      - "admin/i18n/**"
 
 concurrency:
   group: ${{ github.ref }}
