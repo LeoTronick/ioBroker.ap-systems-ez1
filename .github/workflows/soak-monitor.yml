@@ -15,7 +15,7 @@ jobs:
           LATEST=$(npm view iobroker.ap-systems-ez1 dist-tags.latest)
           BETA=$(npm view iobroker.ap-systems-ez1 dist-tags.beta 2>/dev/null || echo "none")
           DOWNLOADS=$(curl -s "https://api.npmjs.org/downloads/point/last-week/iobroker.ap-systems-ez1" \
-            | node -e "let d='';process.stdin.on('data',c=>d+=c);process.stdin.on('end',()=>console.log(JSON.parse(d).downloads))")
+            | jq -r '.downloads')
           echo "latest=$LATEST" >> $GITHUB_OUTPUT
           echo "beta=$BETA" >> $GITHUB_OUTPUT
           echo "downloads=$DOWNLOADS" >> $GITHUB_OUTPUT
