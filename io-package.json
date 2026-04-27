@@ -4,17 +4,30 @@
 		"version": "0.1.0",
 		"news": {
 			"0.1.0": {
-				"en": "error message when connection fails fixed",
-				"de": "fehlermeldung beim ausfall der verbindung",
-				"ru": "сообщение об ошибке при сбое соединения",
-				"pt": "mensagem de erro quando a conexão falha fixa",
-				"nl": "foutmelding wanneer verbinding mislukt",
-				"fr": "message d'erreur lorsque la connexion échoue",
-				"it": "messaggio di errore quando la connessione non funziona",
-				"es": "mensaje de error cuando la conexión falla",
-				"pl": "komunikat błędu, gdy połączenie nie powiodło się",
-				"uk": "повідомлення про помилку при підключенні не фіксується",
-				"zh-cn": "连接失败时错误消息"
+				"en": "Write API for power limit and on/off control; hardware safety hardening; HTTP keep-alive pooling; exponential backoff retry; 23 unit tests; CI pipeline overhaul",
+				"de": "Schreib-API für Leistungslimit und Ein/Aus-Steuerung; Hardware-Sicherheit; HTTP keep-alive; Exponential-Backoff; 23 Unit-Tests; CI-Pipeline",
+				"ru": "API записи для лимита мощности и вкл/выкл; аппаратная безопасность; HTTP keep-alive; экспоненциальный откат; 23 юнит-теста; CI конвейер",
+				"pt": "API de escrita para limite de potência e controle liga/desliga; segurança de hardware; HTTP keep-alive; backoff exponencial; 23 testes unitários; CI",
+				"nl": "Schrijf-API voor vermogenslimiet en aan/uit; hardwarebeveiliging; HTTP keep-alive; exponentiële backoff; 23 unit-tests; CI-pipeline",
+				"fr": "API d'écriture pour limite de puissance et marche/arrêt; sécurité matérielle; HTTP keep-alive; backoff exponentiel; 23 tests unitaires; CI",
+				"it": "API di scrittura per limite di potenza e on/off; sicurezza hardware; HTTP keep-alive; backoff esponenziale; 23 test unitari; CI",
+				"es": "API de escritura para límite de potencia y encendido/apagado; seguridad de hardware; HTTP keep-alive; retroceso exponencial; 23 pruebas unitarias; CI",
+				"pl": "API zapisu dla limitu mocy i wł./wył.; bezpieczeństwo sprzętu; HTTP keep-alive; wykładniczy backoff; 23 testy jednostkowe; CI",
+				"uk": "API запису для ліміту потужності та вкл/викл; апаратна безпека; HTTP keep-alive; експоненційний відступ; 23 юніт-тести; CI",
+				"zh-cn": "写入API（功率限制和开关控制）；硬件安全加固；HTTP keep-alive；指数退避；23个单元测试；CI流水线"
+			},
+			"0.0.2": {
+				"en": "Fix: ioBroker reports error when inverter is offline",
+				"de": "Fix: ioBroker meldet Fehler wenn Wechselrichter offline ist",
+				"ru": "Исправление: ioBroker сообщает об ошибке, когда инвертор не в сети",
+				"pt": "Correção: ioBroker relata erro quando o inversor está offline",
+				"nl": "Bugfix: ioBroker meldt fout wanneer omvormer offline is",
+				"fr": "Correction: ioBroker signale une erreur lorsque l'onduleur est hors ligne",
+				"it": "Fix: ioBroker segnala errore quando l'inverter è offline",
+				"es": "Corrección: ioBroker reporta error cuando el inversor está desconectado",
+				"pl": "Poprawka: ioBroker zgłasza błąd gdy falownik jest offline",
+				"uk": "Виправлення: ioBroker повідомляє про помилку коли інвертор офлайн",
+				"zh-cn": "修复：逆变器离线时ioBroker报告错误"
 			},
 			"0.0.1": {
 				"en": "initial release",
@@ -45,7 +58,7 @@
 			"zh-cn": "AP系统EZ1"
 		},
 		"desc": {
-			"en": "This adapter is used to interact with APsystems EZ1 Microinverters. It provides a convinient way to communicate with the microinverter over your local network.",
+			"en": "Connects ioBroker to an APsystems EZ1 microinverter over the local network. Reads live power and energy data, and supports writing the power cap and on/off state directly to the device.",
 			"de": "Dieser Adapter wird für die Interaktion mit APsystems EZ1-Mikrowechselrichtern verwendet. Es bietet eine praktische Möglichkeit, über Ihr lokales Netzwerk mit dem Mikrowechselrichter zu kommunizieren.",
 			"ru": "Этот адаптер используется для взаимодействия с микроинверторами APsystems EZ1. Он обеспечивает удобный способ связи с микроинвертором по локальной сети.",
 			"pt": "Este adaptador é usado para interagir com microinversores EZ1 da APsystems. Ele fornece uma maneira conveniente de comunicação com o microinversor em sua rede local.",
@@ -58,18 +71,27 @@
 			"zh-cn": "该适配器用于与 APsystems EZ1 微型逆变器交互。它提供了一种通过本地网络与微型逆变器进行通信的便捷方式。"
 		},
 		"authors": [
-			"Paaaddy"
+			"LeoTronick",
+			"Paaaddy",
+			"tobiasexner"
 		],
 		"keywords": [
-			"APsystems EZ1 Microinverter"
+			"APsystems",
+			"EZ1",
+			"microinverter",
+			"solar",
+			"photovoltaic",
+			"inverter",
+			"power",
+			"energy"
 		],
 		"license": "MIT",
 		"platform": "Javascript/Node.js",
 		"main": "build/main.js",
 		"icon": "ap-systems-ez1.png",
 		"enabled": true,
-		"extIcon": "https://raw.githubusercontent.com/Paaaddy/ioBroker.ap-systems-ez1/main/admin/ap-systems-ez1.png",
-		"readme": "https://github.com/Paaaddy/ioBroker.ap-systems-ez1/blob/main/README.md",
+		"extIcon": "https://raw.githubusercontent.com/LeoTronick/ioBroker.ap-systems-ez1/main/admin/ap-systems-ez1.png",
+		"readme": "https://github.com/LeoTronick/ioBroker.ap-systems-ez1/blob/main/README.md",
 		"loglevel": "info",
 		"mode": "daemon",
 		"type": "iot-systems",

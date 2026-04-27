@@ -2,7 +2,7 @@
 
 # ioBroker.ap-systems-ez1
 
-[![CI](https://github.com/Paaaddy/ioBroker.ap-systems-ez1/actions/workflows/ci.yml/badge.svg)](https://github.com/Paaaddy/ioBroker.ap-systems-ez1/actions/workflows/ci.yml)
+[![CI](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/actions/workflows/ci.yml/badge.svg)](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 > **Fork** of [tobiasexner/ioBroker.ap-systems-ez1](https://github.com/tobiasexner/ioBroker.ap-systems-ez1) by [Tobias Exner](https://github.com/tobiasexner). Original implementation is his. This fork adds write API support (power limit + on/off control) and an improved CI pipeline.
@@ -19,7 +19,7 @@ Connects ioBroker to an **APsystems EZ1 microinverter** over the local network u
 
 - APsystems EZ1 microinverter with local API accessible on your LAN
 - ioBroker instance on the same network as the inverter
-- Node.js ≥ 20
+- Node.js ≥ 18
 
 ---
 
@@ -105,7 +105,7 @@ npm run translate      # sync i18n files
 
 | Workflow | Trigger | Purpose |
 |---|---|---|
-| **CI** | Push / PR to `main` (code only) | Lint, type-check, unit tests on Node 20 + 22. Skipped for markdown and docs changes. |
+| **CI** | Push / PR to `main` (code only) | Lint and type-check. Skipped for markdown, docs, and workflow-only changes. |
 | **Release Please** | Push to `main` | Opens a Release PR from conventional commits. Merging creates the GitHub Release and tag. |
 | **Auto-merge** | Dependabot PRs or PRs labeled `automerge-release` | Merges qualifying PRs automatically after CI passes. |
 | **Dependabot** | Weekly | Opens PRs for npm and GitHub Actions updates. |
@@ -113,11 +113,27 @@ npm run translate      # sync i18n files
 | **Rollback** | Manual | Re-points npm dist-tag, deprecates bad version, opens revert PR to ioBroker.repositories. |
 | **Promote to Stable** | Manual | Opens PR to ioBroker.repositories after validating soak, repochecker, and bug count gates. |
 
-Required secret: `AUTO_MERGE_TOKEN` — GitHub PAT with `public_repo` scope.
+Required secret: `RELEASE_PLEASE_TOKEN` — fine-grained PAT on `LeoTronick/ioBroker.ap-systems-ez1` with **Contents: Read & Write**, **Pull requests: Read & Write**, **Workflows: Read & Write**. Falls back to `GITHUB_TOKEN` if not set (CI won't run on the release commit in that case).
+
+---
+
+## Troubleshooting
+
+**`State value to set for "OnOffStatus.OnOffStatus" has to be type "string" but received type "boolean"`**
+
+Stale state object from a pre-0.1.0 install. The state was previously typed as `string`; the adapter now stores a `boolean`. Upgrade to 0.1.1+ — the fix uses `setObjectAsync` instead of `extendObjectAsync` so the schema is corrected on adapter start.
+
+**`MaxPower rejected: device power limits not yet loaded` / `device power limits unavailable`**
+
+The adapter couldn't load min/max power limits from the device (device unreachable at startup or at the time of the write). Check network connectivity to the inverter and retry once the device is online.
 
 ---
 
 ## Changelog
+
+### Unreleased
+
+- Fix: `OnOffStatus.OnOffStatus` type migration — upgrades from older installs no longer see "has to be type string but received type boolean" on every poll ([#6](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/issues/6))
 
 ### 0.1.0 (2026-04-18)
 
