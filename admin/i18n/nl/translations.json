@@ -1,5 +1,9 @@
 {
-	"ap-systems-ez1 adapter settings": "Adapterinstellingen voor ap-systems-ez1",
-	"option1": "Optie 1",
-	"option2": "Optie 2"
+    "ap-systems-ez1 adapter settings": "Adapterinstellingen voor ap-systems-ez1",
+    "option1": "Optie 1",
+    "option2": "Optie 2",
+    "ipAddress": "IP-adres",
+    "port": "Haven",
+    "pollIntervalInSeconds": "Poll-interval in seconden",
+    "ignoreConnectionErrorMessages": "negeer verbindingsfoutmeldingen"
 }
