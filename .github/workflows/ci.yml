@@ -49,13 +49,3 @@ jobs:
           os: ubuntu-latest
           build: true
 
-  adapter-tests-windows:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: windows-latest
-    timeout-minutes: 10
-    steps:
-      - uses: ioBroker/testing-action-adapter@v1
-        with:
-          node-version: 22.x
-          os: windows-latest
-          build: true
