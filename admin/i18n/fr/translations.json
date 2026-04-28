@@ -1,5 +1,9 @@
 {
-	"ap-systems-ez1 adapter settings": "Paramètres d'adaptateur pour ap-systems-ez1",
-	"option1": "Option 1",
-	"option2": "Option 2"
+    "ap-systems-ez1 adapter settings": "Paramètres d'adaptateur pour ap-systems-ez1",
+    "option1": "Option 1",
+    "option2": "Option 2",
+    "ipAddress": "Adresse IP",
+    "port": "Port",
+    "pollIntervalInSeconds": "Intervalle d'interrogation en secondes",
+    "ignoreConnectionErrorMessages": "ignorer les messages d'erreur de connexion"
 }
