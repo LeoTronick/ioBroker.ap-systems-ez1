@@ -3,6 +3,24 @@
 All notable changes to this project will be documented in this file.
 Release-please manages this file for versions after 0.1.0.
 
+## [0.2.0](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/compare/v0.1.0...v0.2.0) (2026-04-28)
+
+
+### Features
+
+* write API, hardware safety hardening, performance, and CI overhaul ([76251af](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/commit/76251aff14526606c78fb701e3fa82f381e221f5))
+* write API, hardware safety hardening, performance, and CI overhaul ([281d9cb](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/commit/281d9cb886cbf729b3a4fdb2d3fd848520494bfd))
+
+
+### Bug Fixes
+
+* **#6:** use setObjectAsync to fix state type migration on upgrade ([1cd56cf](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/commit/1cd56cf9355d2f4a415f4e08df28f6fae847861f))
+* add units to power states and fix MaxPower write handling ([6f6fed6](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/commit/6f6fed6a24480d61d40f3c05e64129eea726975e))
+* add units to power states and fix MaxPower write handling ([8fd8086](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/commit/8fd80863e22c99579d66d2969d5571d1560afb0d))
+* remove windows CI runner and drop workflows:write permission ([1539d01](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/commit/1539d0121dd19fbb1b2e13397852fcfa68e2926d))
+* remove Windows CI runner and drop workflows:write permission ([41ae62b](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/commit/41ae62bf7a57380e662fc5e298d9dad3a5271c95))
+* replace extendObjectAsync with setObjectAsync to fix type migration ([3165891](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/commit/31658916220a8daf6ef4b847ab68d51bee83b3de)), closes [#6](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/issues/6)
+
 ## [0.1.0] - 2026-04-18
 
 ### Added
