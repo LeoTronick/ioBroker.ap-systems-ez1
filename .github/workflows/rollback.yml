@@ -26,62 +26,76 @@ jobs:
     steps:
       - name: Re-point npm latest dist-tag
         if: ${{ !startsWith(inputs.scenario, 'C') }}
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GOOD_VERSION: ${{ inputs.good_version }}
         run: |
-          npm config set //registry.npmjs.org/:_authToken ${{ secrets.NPM_TOKEN }}
-          npm dist-tag add iobroker.ap-systems-ez1@${{ inputs.good_version }} latest
+          npm config set //registry.npmjs.org/:_authToken "${NPM_TOKEN}"
+          npm dist-tag add "iobroker.ap-systems-ez1@${GOOD_VERSION}" latest
           npm view iobroker.ap-systems-ez1 dist-tags
 
       - name: Remove beta dist-tag if bad beta
         if: ${{ startsWith(inputs.scenario, 'C') }}
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          npm config set //registry.npmjs.org/:_authToken ${{ secrets.NPM_TOKEN }}
+          npm config set //registry.npmjs.org/:_authToken "${NPM_TOKEN}"
           npm dist-tag rm iobroker.ap-systems-ez1 beta || true
 
       - name: Deprecate bad version
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+          BAD_VERSION: ${{ inputs.bad_version }}
+          GOOD_VERSION: ${{ inputs.good_version }}
         run: |
-          npm config set //registry.npmjs.org/:_authToken ${{ secrets.NPM_TOKEN }}
-          npm deprecate iobroker.ap-systems-ez1@${{ inputs.bad_version }} \
-            "Regression in ${{ inputs.bad_version }}. Use ${{ inputs.good_version }} or wait for next release."
+          npm config set //registry.npmjs.org/:_authToken "${NPM_TOKEN}"
+          npm deprecate "iobroker.ap-systems-ez1@${BAD_VERSION}" \
+            "Regression in ${BAD_VERSION}. Use ${GOOD_VERSION} or wait for next release."
 
       - name: Open stable-repo revert PR (Scenario B only)
         if: ${{ startsWith(inputs.scenario, 'B') }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GOOD_VERSION: ${{ inputs.good_version }}
+          BAD_VERSION: ${{ inputs.bad_version }}
         run: |
           gh repo fork ioBroker/ioBroker.repositories --clone
           cd ioBroker.repositories
-          git checkout -b revert-ap-systems-ez1-to-${{ inputs.good_version }}
+          git checkout -b "revert-ap-systems-ez1-to-${GOOD_VERSION}"
           node -e "
             const fs = require('fs');
             const f = 'sources-dist-stable.json';
             const d = JSON.parse(fs.readFileSync(f));
             if (d['ap-systems-ez1']) {
-              d['ap-systems-ez1'].version = '${{ inputs.good_version }}';
+              d['ap-systems-ez1'].version = process.env.GOOD_VERSION;
               fs.writeFileSync(f, JSON.stringify(d, null, 2) + '\n');
             }
           "
           git config user.email "actions@github.com"
           git config user.name "GitHub Actions"
           git add sources-dist-stable.json
-          git commit -m "revert: ap-systems-ez1 ${{ inputs.bad_version }} -> ${{ inputs.good_version }}"
+          git commit -m "revert: ap-systems-ez1 ${BAD_VERSION} -> ${GOOD_VERSION}"
           git push origin HEAD
           gh pr create \
             --repo ioBroker/ioBroker.repositories \
-            --title "revert: ap-systems-ez1 ${{ inputs.bad_version }} -> ${{ inputs.good_version }}" \
+            --title "revert: ap-systems-ez1 ${BAD_VERSION} -> ${GOOD_VERSION}" \
             --body "Regression rollback. See Paaaddy/ioBroker.ap-systems-ez1 for tracking issue."
 
       - name: Create tracking issue
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BAD_VERSION: ${{ inputs.bad_version }}
+          GOOD_VERSION: ${{ inputs.good_version }}
+          SCENARIO: ${{ inputs.scenario }}
         run: |
           gh issue create \
             --repo Paaaddy/ioBroker.ap-systems-ez1 \
-            --title "Rollback: ${{ inputs.bad_version }} -> ${{ inputs.good_version }}" \
+            --title "Rollback: ${BAD_VERSION} -> ${GOOD_VERSION}" \
             --body "## Rollback triggered via GitHub Actions
 
-          **Bad version:** \`${{ inputs.bad_version }}\`
-          **Good version:** \`${{ inputs.good_version }}\`
-          **Scenario:** ${{ inputs.scenario }}
+          **Bad version:** \`${BAD_VERSION}\`
+          **Good version:** \`${GOOD_VERSION}\`
+          **Scenario:** ${SCENARIO}
 
           ## Checklist
           - [ ] npm dist-tag re-pointed

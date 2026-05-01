@@ -31,7 +31,7 @@ jobs:
   check-and-lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: ioBroker/testing-action-check@v1
+      - uses: ioBroker/testing-action-check@070b1f092f89f19651a1d344fe9461cebb5811ce # v1
         with:
           node-version: "20.x"
           type-checking: true
@@ -43,7 +43,7 @@ jobs:
       matrix:
         node-version: [20.x, 22.x]
     steps:
-      - uses: ioBroker/testing-action-adapter@v1
+      - uses: ioBroker/testing-action-adapter@6a0eacfceb10a95eec95578012eb3ebc213715c3 # v1
         with:
           node-version: ${{ matrix.node-version }}
           os: ubuntu-latest
