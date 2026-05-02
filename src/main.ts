@@ -5,6 +5,9 @@
 import * as utils from "@iobroker/adapter-core";
 import net from "net";
 import { ApSystemsEz1Client } from "./lib/ApSystemsEz1Client";
+import { ReturnAlarmInfo } from "./lib/ReturnAlarmInfo";
+import { ReturnDeviceInfo } from "./lib/ReturnDeviceInfo";
+import { ReturnOutputData } from "./lib/ReturnOutputData";
 
 class ApSystemsEz1 extends utils.Adapter {
 
@@ -17,36 +20,43 @@ class ApSystemsEz1 extends utils.Adapter {
 	// Serializes write commands — prevents concurrent device commands from racing
 	private writeQueue: Promise<void> = Promise.resolve();
 
+	// Tracks connection state for reconnect detection
+	private isConnected = false;
+
+	// Pending write commands queued while device was offline — last-write-wins per state
+	private pendingOnOff: boolean | null = null;
+	private pendingMaxPower: number | null = null;
+
 	// State mappings cached to avoid object allocation on every poll cycle
 	private static readonly DEVICE_INFO_STRINGS = [
-		{ name: "DeviceId", value: (res: any) => res.deviceId },
-		{ name: "DevVer", value: (res: any) => res.devVer },
-		{ name: "Ssid", value: (res: any) => res.ssid },
-		{ name: "IpAddr", value: (res: any) => res.ipAddr },
+		{ name: "DeviceId", value: (res: ReturnDeviceInfo) => res.deviceId },
+		{ name: "DevVer",   value: (res: ReturnDeviceInfo) => res.devVer },
+		{ name: "Ssid",     value: (res: ReturnDeviceInfo) => res.ssid },
+		{ name: "IpAddr",   value: (res: ReturnDeviceInfo) => res.ipAddr },
 	];
 
 	private static readonly DEVICE_INFO_NUMBERS = [
-		{ name: "MaxPower", role: "value.power", unit: "W", value: (res: any) => res.maxPower },
-		{ name: "MinPower", role: "value.power", unit: "W", value: (res: any) => res.minPower },
+		{ name: "MaxPower", role: "value.power", unit: "W", value: (res: ReturnDeviceInfo) => res.maxPower },
+		{ name: "MinPower", role: "value.power", unit: "W", value: (res: ReturnDeviceInfo) => res.minPower },
 	];
 
 	private static readonly OUTPUT_DATA_NUMBERS = [
-		{ name: "CurrentPower_1",      role: "value.power",  unit: "W",   value: (res: any) => res.p1 },
-		{ name: "CurrentPower_2",      role: "value.power",  unit: "W",   value: (res: any) => res.p2 },
-		{ name: "CurrentPower_Total",  role: "value.power",  unit: "W",   value: (res: any) => res.p1 + res.p2 },
-		{ name: "EnergyToday_1",       role: "value.energy", unit: "kWh", value: (res: any) => res.e1 },
-		{ name: "EnergyToday_2",       role: "value.energy", unit: "kWh", value: (res: any) => res.e2 },
-		{ name: "EnergyToday_Total",   role: "value.energy", unit: "kWh", value: (res: any) => res.e1 + res.e2 },
-		{ name: "EnergyLifetime_1",    role: "value.energy", unit: "kWh", value: (res: any) => res.te1 },
-		{ name: "EnergyLifetime_2",    role: "value.energy", unit: "kWh", value: (res: any) => res.te2 },
-		{ name: "EnergyLifetime_Total",role: "value.energy", unit: "kWh", value: (res: any) => res.te1 + res.te2 },
+		{ name: "CurrentPower_1",      role: "value.power",  unit: "W",   value: (res: ReturnOutputData) => res.p1 },
+		{ name: "CurrentPower_2",      role: "value.power",  unit: "W",   value: (res: ReturnOutputData) => res.p2 },
+		{ name: "CurrentPower_Total",  role: "value.power",  unit: "W",   value: (res: ReturnOutputData) => res.p1 + res.p2 },
+		{ name: "EnergyToday_1",       role: "value.energy", unit: "kWh", value: (res: ReturnOutputData) => res.e1 },
+		{ name: "EnergyToday_2",       role: "value.energy", unit: "kWh", value: (res: ReturnOutputData) => res.e2 },
+		{ name: "EnergyToday_Total",   role: "value.energy", unit: "kWh", value: (res: ReturnOutputData) => res.e1 + res.e2 },
+		{ name: "EnergyLifetime_1",    role: "value.energy", unit: "kWh", value: (res: ReturnOutputData) => res.te1 },
+		{ name: "EnergyLifetime_2",    role: "value.energy", unit: "kWh", value: (res: ReturnOutputData) => res.te2 },
+		{ name: "EnergyLifetime_Total",role: "value.energy", unit: "kWh", value: (res: ReturnOutputData) => res.te1 + res.te2 },
 	];
 
 	private static readonly ALARM_INFO_NUMBERS = [
-		{ name: "OffGrid",           value: (res: any) => res.og },
-		{ name: "ShortCircuitError_1", value: (res: any) => res.isce1 },
-		{ name: "ShortCircuitError_2", value: (res: any) => res.isce2 },
-		{ name: "OutputFault",       value: (res: any) => res.oe },
+		{ name: "OffGrid",             value: (res: ReturnAlarmInfo) => res.og },
+		{ name: "ShortCircuitError_1", value: (res: ReturnAlarmInfo) => res.isce1 },
+		{ name: "ShortCircuitError_2", value: (res: ReturnAlarmInfo) => res.isce2 },
+		{ name: "OutputFault",         value: (res: ReturnAlarmInfo) => res.oe },
 	];
 
 	public constructor(options: Partial<utils.AdapterOptions> = {}) {
@@ -240,6 +250,7 @@ class ApSystemsEz1 extends utils.Adapter {
 					const rawValue = element.value(res);
 					if (rawValue !== "0" && rawValue !== "1") {
 						this.log.error(`Unexpected alarm value for ${element.name}: ${rawValue}`);
+						await this.setStateAsync(stateId, { val: "Unknown", ack: true });
 						return;
 					}
 					const value = rawValue === "0" ? "Normal" : "Alarm";
@@ -319,7 +330,29 @@ class ApSystemsEz1 extends utils.Adapter {
 	}
 
 	private async setConnected(connected: boolean): Promise<void> {
+		const wasConnected = this.isConnected;
+		this.isConnected = connected;
 		await this.setStateAsync("connected", { val: connected, ack: true });
+		if (connected && !wasConnected) {
+			this.drainPendingCommands();
+		}
+	}
+
+	private drainPendingCommands(): void {
+		if (this.pendingOnOff !== null) {
+			const pending = this.pendingOnOff;
+			this.pendingOnOff = null;
+			this.writeQueue = this.writeQueue
+				.then(() => this.applyOnOffStatus(pending))
+				.catch((e) => { this.log.error(`Pending OnOff drain error: ${e instanceof Error ? e.stack : e}`); });
+		}
+		if (this.pendingMaxPower !== null) {
+			const pending = this.pendingMaxPower;
+			this.pendingMaxPower = null;
+			this.writeQueue = this.writeQueue
+				.then(() => this.validateAndSetMaxPower(pending))
+				.catch((e) => { this.log.error(`Pending MaxPower drain error: ${e instanceof Error ? e.stack : e}`); });
+		}
 	}
 
 	/**
@@ -360,7 +393,7 @@ class ApSystemsEz1 extends utils.Adapter {
 			const target = state.val;
 			this.writeQueue = this.writeQueue
 				.then(() => this.applyOnOffStatus(target))
-				.catch(() => { /* errors logged inside */ });
+				.catch((e) => { this.log.error(`applyOnOffStatus queue error: ${e instanceof Error ? e.stack : e}`); });
 		} else if (id.endsWith(".MaxPower.MaxPower")) {
 			const watts = typeof state.val === "string" ? Number(state.val) : state.val;
 			if (typeof watts !== "number" || !Number.isFinite(watts)) {
@@ -369,27 +402,49 @@ class ApSystemsEz1 extends utils.Adapter {
 			}
 			this.writeQueue = this.writeQueue
 				.then(() => this.validateAndSetMaxPower(watts))
-				.catch(() => { /* errors logged inside */ });
+				.catch((e) => { this.log.error(`validateAndSetMaxPower queue error: ${e instanceof Error ? e.stack : e}`); });
 		}
 	}
 
-	private async applyOnOffStatus(on: boolean): Promise<void> {
-		await this.apiClient.setOnOffStatus(on);
+	// Polls fn up to `attempts` times (delayMs between each) until check passes.
+	// Returns the matching result, or undefined if all attempts fail or never match.
+	private async pollUntil<T>(
+		poll: () => Promise<T | undefined>,
+		check: (result: T) => boolean,
+		attempts = 3,
+		delayMs = 1000,
+	): Promise<T | undefined> {
+		for (let i = 0; i < attempts; i++) {
+			await new Promise<void>(r => setTimeout(r, delayMs));
+			const result = await poll();
+			if (result != null && check(result)) return result;
+		}
+		return undefined;
+	}
 
-		// Verify device applied the command; revert local state to device reality on mismatch.
-		// 2000ms allows slow devices time to apply before we poll for confirmation.
-		await new Promise(r => setTimeout(r, 2000));
-		const confirmed = await this.apiClient.getOnOffStatus();
-		if (!confirmed) {
-			this.log.error(`OnOff command sent but could not verify device state`);
-			await this.setConnected(false);
+	private async applyOnOffStatus(on: boolean): Promise<void> {
+		const result = await this.apiClient.setOnOffStatus(on);
+		if (result === undefined) {
+			this.log.warn(`OnOff command queued: device unreachable (target: ${on}). Will retry on reconnect.`);
+			this.pendingOnOff = on;
 			return;
 		}
+		this.pendingOnOff = null;
+
+		// Device API: status "0" = ON, "1" = OFF
 		const expected = on ? "0" : "1";
-		if (confirmed.data.status !== expected) {
-			this.log.error(`OnOff verification failed: sent ${on}, device reports status=${confirmed.data.status}`);
-			const actual = confirmed.data.status === "0";
-			await this.setStateAsync("OnOffStatus.OnOffStatus", { val: actual, ack: true });
+		const confirmed = await this.pollUntil(
+			() => this.apiClient.getOnOffStatus(),
+			(r) => r.data.status === expected,
+		);
+		if (!confirmed) {
+			this.log.error(`OnOff verification failed after retries: sent ${on}`);
+			const reality = await this.apiClient.getOnOffStatus();
+			if (reality?.data != null) {
+				await this.setStateAsync("OnOffStatus.OnOffStatus", { val: reality.data.status === "0", ack: true });
+			} else {
+				await this.setConnected(false);
+			}
 			return;
 		}
 		this.log.info(`OnOff set to ${on}`);
@@ -428,22 +483,30 @@ class ApSystemsEz1 extends utils.Adapter {
 			return;
 		}
 
-		await this.apiClient.setMaxPower(watts);
-
-		// Verify device applied the command; revert local state to device reality on mismatch.
-		// 2000ms allows slow devices time to apply before we poll for confirmation.
-		await new Promise(r => setTimeout(r, 2000));
-		const confirmed = await this.apiClient.getMaxPower();
-		if (!confirmed) {
-			this.log.error(`MaxPower command sent but could not verify device state`);
-			await this.setConnected(false);
+		const result = await this.apiClient.setMaxPower(watts);
+		if (result === undefined) {
+			this.log.warn(`MaxPower command queued: device unreachable (target: ${watts}W). Will retry on reconnect.`);
+			this.pendingMaxPower = watts;
 			return;
 		}
-		const actual = Number(confirmed.data.maxPower);
-		if (!Number.isFinite(actual) || actual !== watts) {
-			this.log.error(`MaxPower verification failed: sent ${watts}W, device reports ${confirmed.data.maxPower}W`);
-			if (Number.isFinite(actual)) {
-				await this.setStateAsync("MaxPower.MaxPower", { val: actual, ack: true });
+		this.pendingMaxPower = null;
+
+		const confirmed = await this.pollUntil(
+			() => this.apiClient.getMaxPower(),
+			(r) => Number(r.data.maxPower) === watts,
+		);
+		if (!confirmed) {
+			this.log.error(`MaxPower verification failed after retries: sent ${watts}W`);
+			const reality = await this.apiClient.getMaxPower();
+			if (reality?.data != null) {
+				const actual = Number(reality.data.maxPower);
+				if (Number.isFinite(actual)) {
+					await this.setStateAsync("MaxPower.MaxPower", { val: actual, ack: true });
+				} else {
+					await this.setConnected(false);
+				}
+			} else {
+				await this.setConnected(false);
 			}
 			return;
 		}
