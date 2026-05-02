@@ -3,6 +3,19 @@
 All notable changes to this project will be documented in this file.
 Release-please manages this file for versions after 0.1.0.
 
+## [0.3.0](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/compare/v0.2.0...v0.3.0) (2026-05-02)
+
+
+### Features
+
+* offline write queue, CI hardening, dev tooling, and test expansion ([87b309c](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/commit/87b309c5461055cb71983b39c33bd7b52cf54312))
+* offline write queue, hardened CI workflows, dev tooling ([646daa1](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/commit/646daa17862afc8feadeb4fe8be7fa80c6ae81e5))
+
+
+### Bug Fixes
+
+* harden CI workflows against injection and supply chain attacks ([2258f6a](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/commit/2258f6ab5d26b2d0dbcece3cdc6d3360ebe65ffb))
+
 ## [0.2.0](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/compare/v0.1.0...v0.2.0) (2026-04-28)
 
 
