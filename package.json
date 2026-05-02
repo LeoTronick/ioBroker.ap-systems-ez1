@@ -41,6 +41,7 @@
     "chai": "^4.3.10",
     "chai-as-promised": "^7.1.1",
     "eslint": "^8.57.0",
+    "husky": "^9.1.7",
     "mocha": "^10.2.0",
     "proxyquire": "^2.1.3",
     "rimraf": "^5.0.5",
@@ -73,7 +74,8 @@
     "check": "tsc --noEmit",
     "lint": "eslint --ext .ts src/",
     "translate": "translate-adapter",
-    "release": "release-script"
+    "release": "release-script",
+    "prepare": "husky"
   },
   "bugs": {
     "url": "https://github.com/Paaaddy/ioBroker.ap-systems-ez1/issues"

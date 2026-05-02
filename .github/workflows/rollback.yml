@@ -20,6 +20,15 @@ on:
           - "B - bad version reached stable repo"
           - "C - bad beta only"
 
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: rollback
+  cancel-in-progress: false  # never interrupt a rollback mid-flight
+
 jobs:
   rollback:
     runs-on: ubuntu-latest

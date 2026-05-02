@@ -19,7 +19,7 @@ Connects ioBroker to an **APsystems EZ1 microinverter** over the local network u
 
 - APsystems EZ1 microinverter with local API accessible on your LAN
 - ioBroker instance on the same network as the inverter
-- Node.js ≥ 18
+- Node.js ≥ 16 (tested: 20, 22)
 
 ---
 

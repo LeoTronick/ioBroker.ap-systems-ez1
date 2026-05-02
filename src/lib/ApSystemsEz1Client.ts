@@ -22,7 +22,7 @@ export class ApSystemsEz1Client {
 
 		const httpAgent = new http.Agent({
 			keepAlive: true,
-			maxSockets: 1,
+			maxSockets: 2,
 			keepAliveMsecs: 1000,
 			// Close idle sockets so stale keep-alive connections don't hang after device reboot
 			timeout: 10000,
