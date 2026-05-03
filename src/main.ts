@@ -36,8 +36,8 @@ class ApSystemsEz1 extends utils.Adapter {
 	];
 
 	private static readonly DEVICE_INFO_NUMBERS = [
-		{ name: "MaxPower", role: "value.power", unit: "W", value: (res: ReturnDeviceInfo) => res.maxPower },
-		{ name: "MinPower", role: "value.power", unit: "W", value: (res: ReturnDeviceInfo) => res.minPower },
+		{ name: "MaxPower", role: "value.power", unit: "W", desc: "Hardware power limit (read-only, set by device)", value: (res: ReturnDeviceInfo) => res.maxPower },
+		{ name: "MinPower", role: "value.power", unit: "W", desc: "Hardware minimum power limit (read-only)",         value: (res: ReturnDeviceInfo) => res.minPower },
 	];
 
 	private static readonly OUTPUT_DATA_NUMBERS = [
@@ -176,7 +176,7 @@ class ApSystemsEz1 extends utils.Adapter {
 						this.markStateCreated(stateId);
 						await this.setObjectAsync(stateId, {
 							type: "state",
-							common: { name: element.name, type: "number", role: element.role, unit: element.unit, read: true, write: false },
+							common: { name: element.name, desc: element.desc, type: "number", role: element.role, unit: element.unit, read: true, write: false },
 							native: {},
 						});
 					}
@@ -248,12 +248,14 @@ class ApSystemsEz1 extends utils.Adapter {
 						});
 					}
 					const rawValue = element.value(res);
-					if (rawValue !== "0" && rawValue !== "1") {
-						this.log.error(`Unexpected alarm value for ${element.name}: ${rawValue}`);
+					// Normalize: some firmware returns numeric 0/1 instead of string "0"/"1"
+					const normalized = rawValue == null ? undefined : String(rawValue);
+					if (normalized !== "0" && normalized !== "1") {
+						this.log.warn(`Alarm field ${element.name} has unexpected value: ${rawValue}`);
 						await this.setStateAsync(stateId, { val: "Unknown", ack: true });
 						return;
 					}
-					const value = rawValue === "0" ? "Normal" : "Alarm";
+					const value = normalized === "0" ? "Normal" : "Alarm";
 					await this.setStateAsync(stateId, { val: value, ack: true });
 				});
 
@@ -311,14 +313,20 @@ class ApSystemsEz1 extends utils.Adapter {
 					return;
 				}
 				const stateId = "MaxPower.MaxPower";
-				if (!this.stateExists(stateId)) {
-					this.markStateCreated(stateId);
-					await this.setObjectAsync(stateId, {
-						type: "state",
-						common: { name: "MaxPower", type: "number", role: "value.power", unit: "W", read: true, write: true },
-						native: {},
-					});
-				}
+				this.markStateCreated(stateId);
+				await this.extendObjectAsync(stateId, {
+					type: "state",
+					common: {
+						name: "MaxPower",
+						desc: "Configurable output power cap — write a value (W) here to limit inverter output",
+						type: "number",
+						role: "value.power",
+						unit: "W",
+						read: true,
+						write: true,
+					},
+					native: {},
+				});
 				await this.setStateAsync(stateId, { val: powerValue, ack: true });
 			} else {
 				await this.setConnected(false);
