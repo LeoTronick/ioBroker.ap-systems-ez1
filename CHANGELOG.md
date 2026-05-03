@@ -3,6 +3,14 @@
 All notable changes to this project will be documented in this file.
 Release-please manages this file for versions after 0.1.0.
 
+## [0.3.1](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/compare/v0.3.0...v0.3.1) (2026-05-03)
+
+
+### Bug Fixes
+
+* alarm firmware variance ([#16](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/issues/16)) and MaxPower state clarity ([#17](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/issues/17)) ([a23a09d](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/commit/a23a09d9b0dd4ed4893762057b9575c38eed8d85))
+* handle alarm firmware variance and clarify MaxPower states ([06a3a76](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/commit/06a3a76feb86090ff7b27f445d60baf475ad5981))
+
 ## [0.3.0](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/compare/v0.2.0...v0.3.0) (2026-05-02)
 
 

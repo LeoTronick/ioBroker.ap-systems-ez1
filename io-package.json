@@ -1,7 +1,7 @@
 {
     "common": {
         "name": "ap-systems-ez1",
-        "version": "0.3.0",
+        "version": "0.3.1",
         "news": {
             "0.1.0": {
                 "en": "Write API for power limit and on/off control; hardware safety hardening; HTTP keep-alive pooling; exponential backoff retry; 23 unit tests; CI pipeline overhaul",
