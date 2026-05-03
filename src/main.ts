@@ -35,9 +35,12 @@ class ApSystemsEz1 extends utils.Adapter {
 		{ name: "IpAddr",   value: (res: ReturnDeviceInfo) => res.ipAddr },
 	];
 
+	// /getDeviceInfo returns minPower/maxPower as strings (e.g. "30", "800") per OpenAPI;
+	// `value` coerces so the Number.isFinite() guard below accepts them. `raw` preserves
+	// the original payload so the diagnostic log can show the device's actual response.
 	private static readonly DEVICE_INFO_NUMBERS = [
-		{ name: "MaxPower", role: "value.power", unit: "W", desc: "Hardware power limit (read-only, set by device)", value: (res: ReturnDeviceInfo) => res.maxPower },
-		{ name: "MinPower", role: "value.power", unit: "W", desc: "Hardware minimum power limit (read-only)",         value: (res: ReturnDeviceInfo) => res.minPower },
+		{ name: "MaxPower", role: "value.power", unit: "W", desc: "Hardware power limit (read-only, set by device)", raw: (res: any) => res.maxPower, value: (res: ReturnDeviceInfo) => Number(res.maxPower) },
+		{ name: "MinPower", role: "value.power", unit: "W", desc: "Hardware minimum power limit (read-only)",         raw: (res: any) => res.minPower, value: (res: ReturnDeviceInfo) => Number(res.minPower) },
 	];
 
 	private static readonly OUTPUT_DATA_NUMBERS = [
@@ -128,6 +131,12 @@ class ApSystemsEz1 extends utils.Adapter {
 			this.log.error(`Initial poll failed unexpectedly: ${e}`);
 		}
 
+		// Boot summary — single info-level line listing what the initial polls discovered.
+		// Any field reported as "unknown" means that poll path silently failed; in
+		// issue #17 the user would have seen MinPower=unknown / MaxPower=unknown on
+		// boot instead of waiting for a write rejection an hour later to investigate.
+		await this.logBootSummary();
+
 		this.slowTimer = setInterval(() => {
 			void this.setDeviceInfoStates();
 			void this.setMaxPowerState();
@@ -168,7 +177,8 @@ class ApSystemsEz1 extends utils.Adapter {
 				const numberPromises = ApSystemsEz1.DEVICE_INFO_NUMBERS.map(async (element) => {
 					const value = element.value(res);
 					if (!Number.isFinite(value)) {
-						this.log.error(`Invalid device limit for ${element.name}: ${value}`);
+						const raw = element.raw(res);
+						this.log.error(`Invalid device limit for ${element.name}: ${JSON.stringify(raw)} (type ${typeof raw})`);
 						return;
 					}
 					const stateId = `DeviceInfo.${element.name}`;
@@ -204,7 +214,7 @@ class ApSystemsEz1 extends utils.Adapter {
 				const promises = ApSystemsEz1.OUTPUT_DATA_NUMBERS.map(async (element) => {
 					const value = element.value(res);
 					if (!Number.isFinite(value)) {
-						this.log.error(`Invalid output data for ${element.name}: ${value}`);
+						this.log.error(`Invalid output data for ${element.name}: ${JSON.stringify(value)} (type ${typeof value})`);
 						return;
 					}
 					const stateId = `OutputData.${element.name}`;
@@ -251,7 +261,7 @@ class ApSystemsEz1 extends utils.Adapter {
 					// Normalize: some firmware returns numeric 0/1 instead of string "0"/"1"
 					const normalized = rawValue == null ? undefined : String(rawValue);
 					if (normalized !== "0" && normalized !== "1") {
-						this.log.warn(`Alarm field ${element.name} has unexpected value: ${rawValue}`);
+						this.log.warn(`Alarm field ${element.name} has unexpected value: ${JSON.stringify(rawValue)} (type ${typeof rawValue}, expected "0" or "1")`);
 						await this.setStateAsync(stateId, { val: "Unknown", ack: true });
 						return;
 					}
@@ -286,7 +296,7 @@ class ApSystemsEz1 extends utils.Adapter {
 					});
 				}
 				if (res.status !== "0" && res.status !== "1") {
-					this.log.error(`Unexpected OnOffStatus from device: ${res.status}`);
+					this.log.error(`Unexpected OnOffStatus from device: ${JSON.stringify(res.status)} (type ${typeof res.status}, expected "0" or "1")`);
 					return;
 				}
 				const value = res.status === "0";
@@ -309,7 +319,7 @@ class ApSystemsEz1 extends utils.Adapter {
 				const res = maxPower.data;
 				const powerValue = Number(res.maxPower);
 				if (!Number.isFinite(powerValue)) {
-					this.log.error(`Invalid maxPower from device: ${res.maxPower}`);
+					this.log.error(`Invalid maxPower from device: ${JSON.stringify(res.maxPower)} (type ${typeof res.maxPower})`);
 					return;
 				}
 				const stateId = "MaxPower.MaxPower";
@@ -340,6 +350,12 @@ class ApSystemsEz1 extends utils.Adapter {
 	private async setConnected(connected: boolean): Promise<void> {
 		const wasConnected = this.isConnected;
 		this.isConnected = connected;
+		// Log only on transition — avoids spam on every poll cycle
+		if (connected && !wasConnected) {
+			this.log.info(`Connected to inverter at ${this.config.ipAddress}:${this.config.port}`);
+		} else if (!connected && wasConnected) {
+			this.log.warn(`Lost connection to inverter at ${this.config.ipAddress}:${this.config.port}`);
+		}
 		await this.setStateAsync("connected", { val: connected, ack: true });
 		if (connected && !wasConnected) {
 			this.drainPendingCommands();
@@ -360,6 +376,33 @@ class ApSystemsEz1 extends utils.Adapter {
 			this.writeQueue = this.writeQueue
 				.then(() => this.validateAndSetMaxPower(pending))
 				.catch((e) => { this.log.error(`Pending MaxPower drain error: ${e instanceof Error ? e.stack : e}`); });
+		}
+	}
+
+	private lastConnectedLogged: boolean | undefined = undefined;
+
+	private async logBootSummary(): Promise<void> {
+		try {
+			const [deviceId, devVer, minPower, maxPower, currentCap, onOff] = await Promise.all([
+				this.getStateAsync("DeviceInfo.DeviceId"),
+				this.getStateAsync("DeviceInfo.DevVer"),
+				this.getStateAsync("DeviceInfo.MinPower"),
+				this.getStateAsync("DeviceInfo.MaxPower"),
+				this.getStateAsync("MaxPower.MaxPower"),
+				this.getStateAsync("OnOffStatus.OnOffStatus"),
+			]);
+			const fmt = (s: ioBroker.State | null | undefined): string => {
+				if (s == null || s.val == null) return "unknown";
+				return String(s.val);
+			};
+			this.log.info(
+				`Adapter ready. Device ${fmt(deviceId)} (firmware ${fmt(devVer)}) ` +
+				`at ${this.config.ipAddress}:${this.config.port}; ` +
+				`on=${fmt(onOff)}; limits=${fmt(minPower)}-${fmt(maxPower)}W; ` +
+				`current cap=${fmt(currentCap)}W`,
+			);
+		} catch (e) {
+			this.log.warn(`Could not assemble boot summary: ${e}`);
 		}
 	}
 
@@ -479,7 +522,11 @@ class ApSystemsEz1 extends utils.Adapter {
 		}
 
 		if (min === null || max === null) {
-			this.log.error(`MaxPower ${watts}W rejected: device power limits unavailable`);
+			this.log.error(
+				`MaxPower ${watts}W rejected: device limits unavailable ` +
+				`(MinPower=${min === null ? "missing" : min}, MaxPower=${max === null ? "missing" : max}). ` +
+				`Check earlier setDeviceInfoStates errors and that /getDeviceInfo is reachable.`,
+			);
 			return;
 		}
 		if (watts < min) {

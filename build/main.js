@@ -34,6 +34,7 @@ const _ApSystemsEz1 = class _ApSystemsEz1 extends utils.Adapter {
     // 1 hour
     // Serializes write commands — prevents concurrent device commands from racing
     this.writeQueue = Promise.resolve();
+    this.lastConnectedLogged = void 0;
     /**
      * Cache to track which states have been created to avoid repeated getStateAsync calls.
      */
@@ -80,13 +81,45 @@ const _ApSystemsEz1 = class _ApSystemsEz1 extends utils.Adapter {
     });
     this.markStateCreated("connected");
     await this.setStateAsync("connected", { val: false, ack: true });
-    await Promise.all([
-      this.setDeviceInfoStates(),
-      this.setMaxPowerState(),
-      this.setOutputDataStates(),
-      this.setAlarmInfoStates(),
-      this.setOnOffStatusState()
-    ]);
+    await this.extendObjectAsync("OnOffStatus", { type: "channel", common: { name: "OnOffStatus" }, native: {} });
+    await this.extendObjectAsync("OnOffStatus.OnOffStatus", {
+      type: "state",
+      common: {
+        name: "OnOffStatus",
+        type: "boolean",
+        role: "switch",
+        read: true,
+        write: true
+      },
+      native: {}
+    });
+    this.markStateCreated("OnOffStatus.OnOffStatus");
+    await this.extendObjectAsync("MaxPower", { type: "channel", common: { name: "MaxPower" }, native: {} });
+    await this.extendObjectAsync("MaxPower.MaxPower", {
+      type: "state",
+      common: {
+        name: "MaxPower",
+        type: "number",
+        role: "value.power",
+        unit: "W",
+        read: true,
+        write: true
+      },
+      native: {}
+    });
+    this.markStateCreated("MaxPower.MaxPower");
+    try {
+      await Promise.all([
+        this.setDeviceInfoStates(),
+        this.setMaxPowerState(),
+        this.setOutputDataStates(),
+        this.setAlarmInfoStates(),
+        this.setOnOffStatusState()
+      ]);
+    } catch (e) {
+      this.log.error(`Initial poll failed unexpectedly: ${e}`);
+    }
+    await this.logBootSummary();
     this.slowTimer = setInterval(() => {
       void this.setDeviceInfoStates();
       void this.setMaxPowerState();
@@ -103,7 +136,7 @@ const _ApSystemsEz1 = class _ApSystemsEz1 extends utils.Adapter {
     try {
       const deviceInfo = await this.apiClient.getDeviceInfo();
       this.log.debug("deviceInfo received");
-      if (deviceInfo !== void 0) {
+      if ((deviceInfo == null ? void 0 : deviceInfo.data) != null) {
         await this.setConnected(true);
         const res = deviceInfo.data;
         const stringPromises = _ApSystemsEz1.DEVICE_INFO_STRINGS.map(async (element) => {
@@ -123,6 +156,12 @@ const _ApSystemsEz1 = class _ApSystemsEz1 extends utils.Adapter {
           await this.setStateAsync(stateId, { val: element.value(res), ack: true });
         });
         const numberPromises = _ApSystemsEz1.DEVICE_INFO_NUMBERS.map(async (element) => {
+          const value = element.value(res);
+          if (!Number.isFinite(value)) {
+            const raw = element.raw(res);
+            this.log.error(`Invalid device limit for ${element.name}: ${JSON.stringify(raw)} (type ${typeof raw})`);
+            return;
+          }
           const stateId = `DeviceInfo.${element.name}`;
           if (!this.stateExists(stateId)) {
             this.markStateCreated(stateId);
@@ -136,7 +175,7 @@ const _ApSystemsEz1 = class _ApSystemsEz1 extends utils.Adapter {
               }
             );
           }
-          await this.setStateAsync(stateId, { val: element.value(res), ack: true });
+          await this.setStateAsync(stateId, { val: value, ack: true });
         });
         await Promise.all([...stringPromises, ...numberPromises]);
       } else {
@@ -151,9 +190,14 @@ const _ApSystemsEz1 = class _ApSystemsEz1 extends utils.Adapter {
     try {
       const outputData = await this.apiClient.getOutputData();
       this.log.debug("outputData received");
-      if (outputData !== void 0) {
+      if ((outputData == null ? void 0 : outputData.data) != null) {
         const res = outputData.data;
         const promises = _ApSystemsEz1.OUTPUT_DATA_NUMBERS.map(async (element) => {
+          const value = element.value(res);
+          if (!Number.isFinite(value)) {
+            this.log.error(`Invalid output data for ${element.name}: ${JSON.stringify(value)} (type ${typeof value})`);
+            return;
+          }
           const stateId = `OutputData.${element.name}`;
           if (!this.stateExists(stateId)) {
             this.markStateCreated(stateId);
@@ -167,7 +211,7 @@ const _ApSystemsEz1 = class _ApSystemsEz1 extends utils.Adapter {
               }
             );
           }
-          await this.setStateAsync(stateId, { val: element.value(res), ack: true });
+          await this.setStateAsync(stateId, { val: value, ack: true });
         });
         await Promise.all(promises);
       } else {
@@ -182,7 +226,7 @@ const _ApSystemsEz1 = class _ApSystemsEz1 extends utils.Adapter {
     try {
       const alarmInfo = await this.apiClient.getAlarmInfo();
       this.log.debug("alarmInfo received");
-      if (alarmInfo !== void 0) {
+      if ((alarmInfo == null ? void 0 : alarmInfo.data) != null) {
         const res = alarmInfo.data;
         const promises = _ApSystemsEz1.ALARM_INFO_NUMBERS.map(async (element) => {
           const stateId = `AlarmInfo.${element.name}`;
@@ -200,7 +244,7 @@ const _ApSystemsEz1 = class _ApSystemsEz1 extends utils.Adapter {
           }
           const rawValue = element.value(res);
           if (rawValue !== "0" && rawValue !== "1") {
-            this.log.error(`Unexpected alarm value for ${element.name}: ${rawValue}`);
+            this.log.error(`Unexpected alarm value for ${element.name}: ${JSON.stringify(rawValue)} (type ${typeof rawValue}, expected "0" or "1")`);
             return;
           }
           const value = rawValue === "0" ? "Normal" : "Alarm";
@@ -219,7 +263,7 @@ const _ApSystemsEz1 = class _ApSystemsEz1 extends utils.Adapter {
     try {
       const onOffStatus = await this.apiClient.getOnOffStatus();
       this.log.debug("onOffStatus received");
-      if (onOffStatus !== void 0) {
+      if ((onOffStatus == null ? void 0 : onOffStatus.data) != null) {
         const res = onOffStatus.data;
         const stateId = "OnOffStatus.OnOffStatus";
         if (!this.stateExists(stateId)) {
@@ -235,7 +279,7 @@ const _ApSystemsEz1 = class _ApSystemsEz1 extends utils.Adapter {
           );
         }
         if (res.status !== "0" && res.status !== "1") {
-          this.log.error(`Unexpected OnOffStatus from device: ${res.status}`);
+          this.log.error(`Unexpected OnOffStatus from device: ${JSON.stringify(res.status)} (type ${typeof res.status}, expected "0" or "1")`);
           return;
         }
         const value = res.status === "0";
@@ -252,11 +296,11 @@ const _ApSystemsEz1 = class _ApSystemsEz1 extends utils.Adapter {
     try {
       const maxPower = await this.apiClient.getMaxPower();
       this.log.debug("maxPower received");
-      if (maxPower !== void 0) {
+      if ((maxPower == null ? void 0 : maxPower.data) != null) {
         const res = maxPower.data;
         const powerValue = Number(res.maxPower);
         if (!Number.isFinite(powerValue)) {
-          this.log.error(`Invalid maxPower from device: ${res.maxPower}`);
+          this.log.error(`Invalid maxPower from device: ${JSON.stringify(res.maxPower)} (type ${typeof res.maxPower})`);
           return;
         }
         const stateId = "MaxPower.MaxPower";
@@ -282,13 +326,54 @@ const _ApSystemsEz1 = class _ApSystemsEz1 extends utils.Adapter {
     }
   }
   async setConnected(connected) {
+    if (this.lastConnectedLogged !== connected) {
+      if (connected) {
+        this.log.info(`Connected to inverter at ${this.config.ipAddress}:${this.config.port}`);
+      } else if (this.lastConnectedLogged === true) {
+        this.log.warn(`Lost connection to inverter at ${this.config.ipAddress}:${this.config.port}`);
+      }
+      this.lastConnectedLogged = connected;
+    }
     await this.setStateAsync("connected", { val: connected, ack: true });
+  }
+  async logBootSummary() {
+    try {
+      const [deviceId, devVer, minPower, maxPower, currentCap, onOff] = await Promise.all([
+        this.getStateAsync("DeviceInfo.DeviceId"),
+        this.getStateAsync("DeviceInfo.DevVer"),
+        this.getStateAsync("DeviceInfo.MinPower"),
+        this.getStateAsync("DeviceInfo.MaxPower"),
+        this.getStateAsync("MaxPower.MaxPower"),
+        this.getStateAsync("OnOffStatus.OnOffStatus")
+      ]);
+      const fmt = (s) => {
+        if (s == null || s.val == null) return "unknown";
+        return String(s.val);
+      };
+      this.log.info(
+        `Adapter ready. Device ${fmt(deviceId)} (firmware ${fmt(devVer)}) at ${this.config.ipAddress}:${this.config.port}; on=${fmt(onOff)}; limits=${fmt(minPower)}-${fmt(maxPower)}W; current cap=${fmt(currentCap)}W`
+      );
+    } catch (e) {
+      this.log.warn(`Could not assemble boot summary: ${e}`);
+    }
   }
   stateExists(stateId) {
     return this.createdStates.has(stateId);
   }
   markStateCreated(stateId) {
     this.createdStates.add(stateId);
+  }
+  // Scripts, Blockly, and vis widgets frequently write numeric states as strings.
+  // Return the numeric value, or null when the input cannot be interpreted as a finite number.
+  coerceToFiniteNumber(val) {
+    if (typeof val === "number") {
+      return Number.isFinite(val) ? val : null;
+    }
+    if (typeof val === "string" && val.trim() !== "") {
+      const parsed = Number(val);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
+    return null;
   }
   /**
    * Is called when adapter shuts down - callback has to be called under any circumstances!
@@ -315,21 +400,22 @@ const _ApSystemsEz1 = class _ApSystemsEz1 extends utils.Adapter {
       this.writeQueue = this.writeQueue.then(() => this.applyOnOffStatus(target)).catch(() => {
       });
     } else if (id.endsWith(".MaxPower.MaxPower")) {
-      if (typeof state.val !== "number") {
-        this.log.error(`MaxPower: expected number, got ${typeof state.val}`);
+      const watts = this.coerceToFiniteNumber(state.val);
+      if (watts === null) {
+        this.log.error(`MaxPower: expected number, got ${typeof state.val} (${JSON.stringify(state.val)})`);
         return;
       }
-      const watts = state.val;
       this.writeQueue = this.writeQueue.then(() => this.validateAndSetMaxPower(watts)).catch(() => {
       });
     }
   }
   async applyOnOffStatus(on) {
     await this.apiClient.setOnOffStatus(on);
-    await new Promise((r) => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, 2e3));
     const confirmed = await this.apiClient.getOnOffStatus();
     if (!confirmed) {
       this.log.error(`OnOff command sent but could not verify device state`);
+      await this.setConnected(false);
       return;
     }
     const expected = on ? "0" : "1";
@@ -351,7 +437,9 @@ const _ApSystemsEz1 = class _ApSystemsEz1 extends utils.Adapter {
     const min = typeof (minState == null ? void 0 : minState.val) === "number" && Number.isFinite(minState.val) ? minState.val : null;
     const max = typeof (maxState == null ? void 0 : maxState.val) === "number" && Number.isFinite(maxState.val) ? maxState.val : null;
     if (min === null || max === null) {
-      this.log.error(`MaxPower ${watts}W rejected: device power limits not yet loaded`);
+      this.log.error(
+        `MaxPower ${watts}W rejected: device limits unavailable (MinPower=${min === null ? "missing" : min}, MaxPower=${max === null ? "missing" : max}). Check earlier setDeviceInfoStates errors and that /getDeviceInfo is reachable.`
+      );
       return;
     }
     if (watts < min) {
@@ -363,10 +451,11 @@ const _ApSystemsEz1 = class _ApSystemsEz1 extends utils.Adapter {
       return;
     }
     await this.apiClient.setMaxPower(watts);
-    await new Promise((r) => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, 2e3));
     const confirmed = await this.apiClient.getMaxPower();
     if (!confirmed) {
       this.log.error(`MaxPower command sent but could not verify device state`);
+      await this.setConnected(false);
       return;
     }
     const actual = Number(confirmed.data.maxPower);
@@ -417,9 +506,12 @@ _ApSystemsEz1.DEVICE_INFO_STRINGS = [
   { name: "Ssid", value: (res) => res.ssid },
   { name: "IpAddr", value: (res) => res.ipAddr }
 ];
+// /getDeviceInfo returns minPower/maxPower as strings (e.g. "30", "800") per OpenAPI;
+// `value` coerces so the Number.isFinite() guard below accepts them. `raw` preserves
+// the original payload so the diagnostic log can show the device's actual response.
 _ApSystemsEz1.DEVICE_INFO_NUMBERS = [
-  { name: "MaxPower", value: (res) => res.maxPower },
-  { name: "MinPower", value: (res) => res.minPower }
+  { name: "MaxPower", raw: (res) => res.maxPower, value: (res) => Number(res.maxPower) },
+  { name: "MinPower", raw: (res) => res.minPower, value: (res) => Number(res.minPower) }
 ];
 _ApSystemsEz1.OUTPUT_DATA_NUMBERS = [
   { name: "CurrentPower_1", role: "value.power", unit: "W", value: (res) => res.p1 },
