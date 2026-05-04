@@ -3,6 +3,15 @@
 All notable changes to this project will be documented in this file.
 Release-please manages this file for versions after 0.1.0.
 
+## [0.3.2](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/compare/v0.3.1...v0.3.2) (2026-05-04)
+
+
+### Bug Fixes
+
+* coerce DeviceInfo string limits so MaxPower writes are accepted ([0998eb5](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/commit/0998eb539f03e84d816d9ab72336bffb22f5afc7))
+* coerce DeviceInfo string limits so MaxPower writes are accepted ([532f996](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/commit/532f996b32a7fbe01372b76b53a03bbf2d66de55))
+* surface bootstrap and validation problems at info level ([8b77b27](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/commit/8b77b27537b1d8787b88feff0a488f7fe3e0c20a))
+
 ## [0.3.1](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/compare/v0.3.0...v0.3.1) (2026-05-03)
 
 
