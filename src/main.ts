@@ -11,7 +11,7 @@ import { ReturnOutputData } from "./lib/ReturnOutputData";
 
 class ApSystemsEz1 extends utils.Adapter {
 
-	private pollIntervalInMilliSeconds: number = 60;
+	private pollIntervalInMilliSeconds = 0;
 	private apiClient!: ApSystemsEz1Client;
 	private timer: NodeJS.Timeout | undefined;
 	private slowTimer: NodeJS.Timeout | undefined;
@@ -38,9 +38,9 @@ class ApSystemsEz1 extends utils.Adapter {
 	// /getDeviceInfo returns minPower/maxPower as strings (e.g. "30", "800") per OpenAPI;
 	// `value` coerces so the Number.isFinite() guard below accepts them. `raw` preserves
 	// the original payload so the diagnostic log can show the device's actual response.
-	private static readonly DEVICE_INFO_NUMBERS = [
-		{ name: "MaxPower", role: "value.power", unit: "W", desc: "Hardware power limit (read-only, set by device)", raw: (res: any) => res.maxPower, value: (res: ReturnDeviceInfo) => Number(res.maxPower) },
-		{ name: "MinPower", role: "value.power", unit: "W", desc: "Hardware minimum power limit (read-only)",         raw: (res: any) => res.minPower, value: (res: ReturnDeviceInfo) => Number(res.minPower) },
+	private static readonly DEVICE_INFO_NUMBERS: Array<{ name: string; role: string; unit: string; desc: string; raw: (res: ReturnDeviceInfo) => string; value: (res: ReturnDeviceInfo) => number }> = [
+		{ name: "MaxPower", role: "value.power", unit: "W", desc: "Hardware power limit (read-only, set by device)", raw: (res) => res.maxPower, value: (res) => Number(res.maxPower) },
+		{ name: "MinPower", role: "value.power", unit: "W", desc: "Hardware minimum power limit (read-only)",         raw: (res) => res.minPower, value: (res) => Number(res.minPower) },
 	];
 
 	private static readonly OUTPUT_DATA_NUMBERS = [
@@ -486,7 +486,7 @@ class ApSystemsEz1 extends utils.Adapter {
 		const expected = on ? "0" : "1";
 		const confirmed = await this.pollUntil(
 			() => this.apiClient.getOnOffStatus(),
-			(r) => r.data.status === expected,
+			(r) => r.data != null && r.data.status === expected,
 		);
 		if (!confirmed) {
 			this.log.error(`OnOff verification failed after retries: sent ${on}`);
@@ -548,7 +548,7 @@ class ApSystemsEz1 extends utils.Adapter {
 
 		const confirmed = await this.pollUntil(
 			() => this.apiClient.getMaxPower(),
-			(r) => Number(r.data.maxPower) === watts,
+			(r) => r.data != null && Number(r.data.maxPower) === watts,
 		);
 		if (!confirmed) {
 			this.log.error(`MaxPower verification failed after retries: sent ${watts}W`);
