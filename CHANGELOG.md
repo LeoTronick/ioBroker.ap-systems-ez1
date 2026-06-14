@@ -3,6 +3,14 @@
 All notable changes to this project will be documented in this file.
 Release-please manages this file for versions after 0.1.0.
 
+## [0.3.3](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/compare/v0.3.2...v0.3.3) (2026-06-14)
+
+
+### Bug Fixes
+
+* handleClientError sync, pollUntil null guard, type-safe DEVICE_INFO_NUMBERS ([f1f8d5a](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/commit/f1f8d5a7510d593282c2b650eed7adb4e71a5558))
+* handleClientError sync, pollUntil null guard, type-safe DEVICE_INFO_NUMBERS ([cb9197c](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/commit/cb9197c0d990c6b453670dd835d897e4dfc0a8e9))
+
 ## [0.3.2](https://github.com/LeoTronick/ioBroker.ap-systems-ez1/compare/v0.3.1...v0.3.2) (2026-05-04)
 
 
